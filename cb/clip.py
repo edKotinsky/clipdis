@@ -3,6 +3,7 @@ from locale import strxfrm
 from itertools import chain
 from sys import stdin, stdout
 from pathlib import Path
+from os import stat
 
 from .common import run_in_executor, eopen, State, FileWatcher
 from .constants import BIN_DIR, STATEFILE, DATAFILE, ENCODING
@@ -52,8 +53,6 @@ async def _copy(datafile: Path, statefile: Path) -> None:
 def _paste_callback(datafile: Path, statefile: Path) -> None:
     with eopen(statefile, "rt") as sf:
         state = sf.read()
-        print(f"state is {state}")
-        print(f"State.DONE.value in state: {State.DONE.value in state}")
         if State.DONE.value not in state:
             msg = "State file is not in proper condition, must be DONE"
             raise RuntimeError(msg)
@@ -64,9 +63,10 @@ def _paste_callback(datafile: Path, statefile: Path) -> None:
 
 
 async def _paste(datafile: Path, statefile: Path) -> None:
+    sf_watcher = FileWatcher(statefile, _paste_callback, datafile, statefile)
     with eopen(statefile, "wt") as sf:
         sf.write(State.PASTE.value)
-    sf_watcher = FileWatcher(statefile, _paste_callback, datafile, statefile)
+        sf_watcher.stamp = stat(statefile).st_mtime
     await sf_watcher.async_look()
 
 

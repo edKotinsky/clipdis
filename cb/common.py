@@ -16,10 +16,10 @@ T = TypeVar("T")
 
 class FileWatcher:
     refresh_in_seconds = 0.1
+    stamp = 0
 
     def __init__(self, file_to_watch: Path, file_changed_callback,
                  *args, **kwargs):
-        self.__cached_stamp = 0
         self.filename = file_to_watch
         self.__callback = file_changed_callback
         self.__args = args
@@ -49,7 +49,7 @@ class FileWatcher:
                 await sleep(self.refresh_in_seconds)
                 continue
             stamp = stat(self.filename).st_mtime
-            if stamp == self.__cached_stamp:
+            if stamp == self.stamp:
                 await sleep(self.refresh_in_seconds)
                 continue
             self.__cached_stamp = stamp
