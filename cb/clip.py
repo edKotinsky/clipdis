@@ -1,15 +1,10 @@
 from typing import Sequence
-from locale import strxfrm
-from itertools import chain
 from sys import stdin, stdout
 from pathlib import Path
 from os import stat
 
 from .common import run_in_executor, eopen, State, FileWatcher
-from .constants import BIN_DIR, STATEFILE, DATAFILE, ENCODING
-
-DONE_WAIT_TIME = 0.1
-DONE_MAX_WAIT_TIME = 1
+from .constants import STATEFILE, DATAFILE, ENCODING
 
 
 def _is_copy(name: str, args: Sequence[str]) -> bool:
@@ -32,14 +27,6 @@ def _is_paste(name: str, args: Sequence[str]) -> bool:
         return True
     else:
         return False
-
-
-def _bin_names() -> Sequence[str]:
-    def key(p):
-        return tuple(map(strxfrm(), p.parts))
-    paths = sorted(BIN_DIR.iterdir(), key=key)
-    names = tuple(chain((p.name for p in paths), map(str, paths)))
-    return names
 
 
 async def _copy(datafile: Path, statefile: Path) -> None:
