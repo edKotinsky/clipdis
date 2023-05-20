@@ -29,7 +29,7 @@ the process exits.
 
 ## Disclaimer
 
-I wrote this thing not so soon, so it is quite raw and buggy.
+I wrote this thing not long ago, so it is quite raw and buggy.
 
 ## License
 
