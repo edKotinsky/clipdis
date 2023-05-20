@@ -27,7 +27,7 @@ async def main() -> int:
             await watcher(ns.id, ns.directory, ns.logfile)
         return 0
     except Exception as err:
-        print(err)
+        print(f"Error: {err}")
         return 1
 
 
