@@ -121,8 +121,7 @@ async def main() -> None:
 async def watcher(container_id: str, directory: str, logfile: str) -> None:
     logfile = Path(logfile)
     if logfile != '_' and not logfile.parent.exists():
-        print("Logfile directory does not exist")
-        exit(1)
+        raise RuntimeError(f"Logfile directory {logfile.parent} does not exist")
 
     cmd = ["python3", "-m", MODULE, container_id, directory, str(logfile)]
     await subprocess.create_subprocess_exec(*cmd)
