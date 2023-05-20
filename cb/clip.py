@@ -73,3 +73,5 @@ async def clipboard_tool(binname: str, directory: str,
         await _copy(datafile, statefile)
     elif _is_paste(binname, args):
         await _paste(datafile, statefile)
+    else:
+        raise RuntimeError(f"Unrecognized program name: {binname}")
