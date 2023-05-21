@@ -3,7 +3,7 @@ import pyperclip as pyc
 from os import getcwd
 from asyncio import CancelledError, sleep, create_task, gather
 from pathlib import Path
-from typing import Sequence, Awaitable, Optional
+from typing import Sequence, Awaitable
 from pexpect import spawn
 
 from .common import FileWatcher, State, eopen, check_state
@@ -58,16 +58,12 @@ def _callback(statefile: Path, datafile: Path, tasks: set) -> None:
             _paste(datafile, statefile)
 
 
-class InteractData:
-    datadir: Optional[str] = ""
-    clipdir: Optional[str] = ""
-    user: Optional[str] = ""
-    image: Optional[str] = ""
-    name: Optional[str] = ""
-    logfile: Optional[str] = ""
-
+class InteractData(object):
     def __init__(self, data_directory: str, clip_directory: str,
                  user_name: str, image: str, container_name: str, logfile: str):
+        if not data_directory:
+            raise RuntimeError(
+                "Not all necessary arguments are specified. Type `--help`")
         self.datadir = data_directory
         self.clipdir = clip_directory
         self.user = user_name

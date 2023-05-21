@@ -29,7 +29,7 @@ setup(
     url="https://github.com/edKotinsky/clipdis",
     entry_points={
         "console_scripts": [
-            "clipdis_start = cb"
+            "clipdis_start = clipdis.main:run_main"
         ]
     },
     install_requires=[
