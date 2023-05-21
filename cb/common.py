@@ -29,9 +29,9 @@ class FileWatcher:
         if not self.filename.exists():
             return
         stamp = stat(self.filename).st_mtime
-        if stamp == self.__cached_stamp:
+        if stamp == self.stamp:
             return
-        self.__cached_stamp = stamp
+        self.stamp = stamp
         if not callable(self.__callback):
             msg = "FileWatcher's callback must be callable, not " + \
                   type(self.__callback)
@@ -52,7 +52,7 @@ class FileWatcher:
             if stamp == self.stamp:
                 await sleep(self.refresh_in_seconds)
                 continue
-            self.__cached_stamp = stamp
+            self.stamp = stamp
             if iscoroutinefunction(self.__callback):
                 await self.__callback(*self.__args, **self.__kwargs)
                 return
