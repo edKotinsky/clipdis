@@ -47,8 +47,8 @@ def _paste_callback(datafile: Path, statefile: Path) -> None:
     with eopen(statefile, "rt") as sf:
         state = sf.read()
         if State.DONE.value not in state:
-            msg = "State file is not in proper condition, must be DONE"
-            raise RuntimeError(msg)
+            raise RuntimeWarning(
+                "State file is not in proper condition, must be DONE")
     with eopen(datafile, "rt") as df:
         data = df.read()
         stdout.write(data)
@@ -99,4 +99,4 @@ async def clipboard_tool(binname: str, directory: str,
     elif _is_paste(binname, args):
         await _paste(datafile, statefile)
     else:
-        raise RuntimeError(f"Unrecognized program name: {binname}")
+        raise RuntimeWarning(f"Unrecognized program name: {binname}")

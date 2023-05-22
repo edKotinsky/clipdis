@@ -48,6 +48,8 @@ async def main() -> int:
                                  logfile=ns.logfile)
             await start(idata)
         return 0
+    except RuntimeWarning as err:
+        print(f"Warning: {err}")
     except Exception as err:
         print(f"Error: {err}")
         trace: str = format_exc(chain=False)

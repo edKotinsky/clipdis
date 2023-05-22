@@ -4,6 +4,7 @@ from os import getcwd
 from asyncio import CancelledError, sleep, create_task, gather
 from pathlib import Path
 from typing import Sequence, Awaitable
+from shutil import which
 from pexpect import spawn
 
 from .common import FileWatcher, State, eopen, check_state
@@ -30,7 +31,7 @@ def _copy(filename: Path) -> None:
         pyc.copy(data)
     except pyc.PyperclipException as err:
         logging.error(f"Pyperclip error: {err}")
-    except RuntimeError as err:
+    except Exception as err:
         logging.error(f"File error: {err}")
         raise
     else:
@@ -62,7 +63,7 @@ class InteractData(object):
     def __init__(self, data_directory: str, clip_directory: str,
                  user_name: str, image: str, container_name: str, logfile: str):
         if not data_directory:
-            raise RuntimeError(
+            raise RuntimeWarning(
                 "Not all necessary arguments are specified. Type `--help`")
         self.datadir = data_directory
         self.clipdir = clip_directory
@@ -108,6 +109,9 @@ async def _interact(data: InteractData, tasks: Sequence[Awaitable]) -> None:
 
 async def start(data: InteractData) -> None:
     _configure_logger(data.logfile)
+
+    if not which("docker"):
+        raise RuntimeWarning("docker is not found")
 
     tasks = set()
 
