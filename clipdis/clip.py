@@ -2,9 +2,15 @@ from typing import Sequence
 from sys import stdin, stdout
 from pathlib import Path
 from os import stat
+from asyncio import sleep
 
 from .common import run_in_executor, eopen, State, FileWatcher
 from .constants import STATEFILE, DATAFILE, ENCODING
+
+
+_wait_refresh_sec = 0.1
+_wait_max_time_sec = 1
+_wait_max_try = _wait_max_time_sec // _wait_refresh_sec
 
 
 def _is_copy(name: str, args: Sequence[str]) -> bool:
@@ -49,11 +55,30 @@ def _paste_callback(datafile: Path, statefile: Path) -> None:
         stdout.flush()
 
 
+async def _wait_for_done(statefile: Path) -> bool:
+    stamp = 0
+    count = 0
+    while True:
+        if count == _wait_max_try:
+            return False
+        count += 1
+        await sleep(_wait_refresh_sec)
+        newstamp = stat(statefile).st_mtime
+        if newstamp == stamp:
+            continue
+        stamp = newstamp
+        with eopen(statefile, "rt") as sf:
+            if State.DONE.value in sf.read():
+                return True
+
+
 async def _paste(datafile: Path, statefile: Path) -> None:
     sf_watcher = FileWatcher(statefile, _paste_callback, datafile, statefile)
     with eopen(statefile, "wt") as sf:
         sf.write(State.PASTE.value)
-        sf_watcher.stamp = stat(statefile).st_mtime
+    done = await _wait_for_done(statefile)
+    if not done:
+        return
     await sf_watcher.async_look()
 
 
