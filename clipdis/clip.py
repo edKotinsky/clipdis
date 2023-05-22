@@ -84,6 +84,8 @@ async def _paste(datafile: Path, statefile: Path) -> None:
 
 async def clipboard_tool(binname: str, directory: str,
                          args: Sequence[str]) -> None:
+    if not directory:
+        raise RuntimeWarning("Clip directory is not specified")
     datafile = directory / DATAFILE
     statefile = directory / STATEFILE
 
