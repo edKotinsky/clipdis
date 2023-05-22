@@ -33,6 +33,10 @@ async def main() -> int:
                          help="Container name; by default: workspace")
     watcher.add_argument("-l", "--logfile", type=str, default='_',
                          help="File to write log messages")
+    watcher.add_argument("--dry-run", action='store_true',
+                         help="Do not start docker container; in this mode "
+                         "options --datadir, --user, --image, --containername "
+                         "have no effect and are unnecessary")
 
     ns, args = parser.parse_known_args()
 
@@ -45,7 +49,8 @@ async def main() -> int:
                                  user_name=ns.user,
                                  image=ns.image,
                                  container_name=ns.containername,
-                                 logfile=ns.logfile)
+                                 logfile=ns.logfile,
+                                 dry_run=ns.dry_run)
             await start(idata)
         return 0
     except RuntimeWarning as err:

@@ -70,6 +70,7 @@ class State(Enum):
     PASTE = "paste"
     DONE = "done"
     NONE = "none"
+    HALT = "halt"
 
 
 def eopen(file: Path, mode: str) -> TextIOWrapper:

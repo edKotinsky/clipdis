@@ -1,16 +1,14 @@
 import logging
 import pyperclip as pyc
 from os import getcwd
-from asyncio import CancelledError, sleep, create_task, gather
+from asyncio import CancelledError, Task, sleep, create_task, gather
 from pathlib import Path
-from typing import Sequence, Awaitable
+from typing import Sequence
 from shutil import which
 from pexpect import spawn
 
 from .common import FileWatcher, State, eopen, check_state
 from .constants import STATEFILE, DATAFILE
-
-MODULE = "cb.watcher"
 
 
 def _configure_logger(logfile: str):
@@ -61,8 +59,11 @@ def _callback(statefile: Path, datafile: Path, tasks: set) -> None:
 
 class InteractData(object):
     def __init__(self, data_directory: str, clip_directory: str,
-                 user_name: str, image: str, container_name: str, logfile: str):
-        if not data_directory:
+                 user_name: str, image: str, container_name: str,
+                 dry_run: bool, logfile: str):
+        opts = dry_run or data_directory and user_name and image and \
+            container_name
+        if not (clip_directory and opts):
             raise RuntimeWarning(
                 "Not all necessary arguments are specified. Type `--help`")
         self.datadir = data_directory
@@ -71,23 +72,24 @@ class InteractData(object):
         self.image = image
         self.name = container_name
         self.logfile = logfile
+        self.dryrun = dry_run
 
 
-def _tasks_done(tasks: Sequence[Awaitable]) -> bool:
+def _tasks_done(tasks: Sequence[Task]) -> bool:
     for task in tasks:
         if not task.done():
             return False
     return True
 
 
-async def _cancel_tasks(tasks: Sequence[Awaitable]) -> None:
+async def _cancel_tasks(tasks: Sequence[Task]) -> None:
     for task in tasks:
         task.cancel()
     while not _tasks_done(tasks):
         await sleep(0)
 
 
-async def _interact(data: InteractData, tasks: Sequence[Awaitable]) -> None:
+async def _interact(data: InteractData, tasks: Sequence[Task]) -> None:
     internal_data = f"{data.datadir}:/home/{data.user}/.data"
     workdir = f"/home/{data.user}/data"
     workdir_volume = f"{getcwd()}:{workdir}"
@@ -107,6 +109,17 @@ async def _interact(data: InteractData, tasks: Sequence[Awaitable]) -> None:
     await _cancel_tasks(tasks)
 
 
+async def _halt(statefile: Path, tasks: Sequence[Task]) -> None:
+    while True:
+        with eopen(statefile, "rt") as sf:
+            state = sf.read()
+            if State.HALT.value in state:
+                await _cancel_tasks(tasks)
+                return
+            await sleep(0.1)
+    pass
+
+
 async def start(data: InteractData) -> None:
     _configure_logger(data.logfile)
 
@@ -118,10 +131,13 @@ async def start(data: InteractData) -> None:
     statefile = Path(data.clipdir) / STATEFILE
     datafile = Path(data.clipdir) / DATAFILE
 
+    tasks.add(create_task(_halt(statefile, tasks)))
+
     watcher = FileWatcher(statefile, _callback, statefile, datafile, tasks)
     tasks.add(create_task(watcher.watch()))
 
-    tasks.add(create_task(_interact(data, tasks)))
+    if not data.dryrun:
+        tasks.add(create_task(_interact(data, tasks)))
 
     try:
         await gather(*tasks)
