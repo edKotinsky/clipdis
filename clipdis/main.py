@@ -62,7 +62,7 @@ def _print_stacktrace(trace: str) -> None:
         line = trace[i]
         if "clipdis/" in line:
             print(line)
-            if i < len(trace):
+            if i + 1 < len(trace):
                 print(trace[i + 1])
 
 
