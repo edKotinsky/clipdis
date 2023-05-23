@@ -3,15 +3,6 @@ from argparse import ArgumentParser
 from subprocess import Popen, PIPE, STDOUT
 from sys import stdout, exit
 
-
-def scripts() -> dict[str, str]:
-    pass
-
-
-def dependencies() -> list[str]:
-    pass
-
-
 config = {
     "build-system": {
         "requires": ["setuptools"]
