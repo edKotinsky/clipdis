@@ -1,7 +1,16 @@
 # Docker clipboard dispatcher
 
-Uses docker volume to share data between container and host. Possibly will work
-even on Windows (but I have not tested).
+Uses docker volume to share data between container and host. 
+
+All you need is to copy module directory to the container and add its `bin`
+directory to container's PATH environment variable. On the host you need to add
+the following alias:
+
+```sh
+alias start-doc="python3 -m cb 
+```
+
+Will not work on Windows.
 
 ## How it works
 

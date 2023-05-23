@@ -1,8 +1,0 @@
-#!/bin/sh
-set -eu
-
-programname="$0"
-cd "$(dirname "$(dirname "$programname")")" || exit 1
-
-dir="$HOME/.clipboard"
-python3 -m cb --directory $dir --name "$programname" --  "$@"
