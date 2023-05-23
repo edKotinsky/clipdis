@@ -5,39 +5,7 @@ from .start_docker import InteractData, start
 from .common import run
 
 
-async def main() -> int:
-    parser = ArgumentParser()
-
-    clip_args = parser.add_argument_group("clip", "Clip tool args;"
-                                          " these arguments only required if"
-                                          " module is executed on a container's"
-                                          " side")
-    clip_args.add_argument("--directory", type=str,
-                           help="Docker volume directory")
-    clip_args.add_argument("--name", type=str,
-                           help="Name of a clipboard tool;"
-                           " must be specified only on the container's side")
-
-    watcher = parser.add_argument_group("watcher",
-                                        "Args that required by host's side")
-    watcher.add_argument("-d", "--datadir", type=str,
-                         help="Directory where the container will store its"
-                         "internal data")
-    watcher.add_argument("-c", "--clipdir", type=str,
-                         help="Directory where the clipboard dispatcher files"
-                         "will be stored; in this directory the docker's volume"
-                         "will be mounted")
-    watcher.add_argument("-u", "--user", type=str, help="Username")
-    watcher.add_argument("-i", "--image", type=str, help="Image name")
-    watcher.add_argument("-n", "--containername", type=str, default="workspace",
-                         help="Container name; by default: workspace")
-    watcher.add_argument("-l", "--logfile", type=str, default='_',
-                         help="File to write log messages")
-    watcher.add_argument("--dry-run", action='store_true',
-                         help="Do not start docker container; in this mode "
-                         "options --datadir, --user, --image, --containername "
-                         "have no effect and are unnecessary")
-
+async def main(parser: ArgumentParser) -> int:
     ns, args = parser.parse_known_args()
 
     try:
@@ -75,3 +43,37 @@ def _print_stacktrace(trace: str) -> None:
 
 def run_main() -> int:
     return run(main())
+
+
+def run_clip() -> int:
+    parser = ArgumentParser()
+
+    parser.add_argument("--directory", type=str,
+                        help="Docker volume directory")
+    parser.add_argument("--name", type=str,
+                        help="Name of a clipboard tool;"
+                        " must be specified only on the container's side")
+    return run(main(parser))
+
+
+def run_host() -> int:
+    parser = ArgumentParser()
+
+    parser.add_argument("-d", "--datadir", type=str,
+                        help="Directory where the container will store its"
+                        "internal data")
+    parser.add_argument("-c", "--clipdir", type=str,
+                        help="Directory where the clipboard dispatcher files"
+                        "will be stored; in this directory the docker's volume"
+                        "will be mounted")
+    parser.add_argument("-u", "--user", type=str, help="Username")
+    parser.add_argument("-i", "--image", type=str, help="Image name")
+    parser.add_argument("-n", "--containername", type=str, default="workspace",
+                        help="Container name; by default: workspace")
+    parser.add_argument("-l", "--logfile", type=str, default='_',
+                        help="File to write log messages")
+    parser.add_argument("--dry-run", action='store_true',
+                        help="Do not start docker container; in this mode "
+                        "options --datadir, --user, --image, --containername "
+                        "have no effect and are unnecessary")
+    return run(main(parser))
