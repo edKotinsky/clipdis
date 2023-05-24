@@ -5,13 +5,11 @@ from .start_docker import InteractData, start
 from .common import run
 
 
-async def main(parser: ArgumentParser) -> int:
+async def main(parser: ArgumentParser, is_host: bool) -> int:
     ns, args = parser.parse_known_args()
 
     try:
-        if ns.name:
-            await clipboard_tool(ns.name, ns.directory, args)
-        else:
+        if is_host:
             idata = InteractData(data_directory=ns.datadir,
                                  clip_directory=ns.clipdir,
                                  user_name=ns.user,
@@ -20,6 +18,8 @@ async def main(parser: ArgumentParser) -> int:
                                  logfile=ns.logfile,
                                  dry_run=ns.dry_run)
             await start(idata)
+        else:
+            await clipboard_tool(ns.name, ns.directory, args)
         return 0
     except RuntimeWarning as err:
         print(f"Warning: {err}")
@@ -41,10 +41,6 @@ def _print_stacktrace(trace: str) -> None:
                 print(trace[i + 1])
 
 
-def run_main() -> int:
-    return run(main())
-
-
 def run_clip() -> int:
     parser = ArgumentParser()
 
@@ -53,7 +49,7 @@ def run_clip() -> int:
     parser.add_argument("--name", type=str,
                         help="Name of a clipboard tool;"
                         " must be specified only on the container's side")
-    return run(main(parser))
+    return run(main(parser, False))
 
 
 def run_host() -> int:
@@ -76,4 +72,4 @@ def run_host() -> int:
                         help="Do not start docker container; in this mode "
                         "options --datadir, --user, --image, --containername "
                         "have no effect and are unnecessary")
-    return run(main(parser))
+    return run(main(parser, True))
