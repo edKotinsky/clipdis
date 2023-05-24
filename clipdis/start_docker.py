@@ -1,11 +1,16 @@
 import logging
+import struct
+import termios
 import pyperclip as pyc
-from os import getcwd
+from os import getcwd, get_terminal_size
 from asyncio import CancelledError, Task, sleep, create_task, gather
 from pathlib import Path
 from typing import Sequence
 from shutil import which
 from pexpect import spawn
+from sys import stdout
+from fcntl import ioctl
+from signal import signal, SIGWINCH
 
 from .common import FileWatcher, State, eopen, check_state
 from .constants import STATEFILE, DATAFILE
@@ -90,6 +95,17 @@ async def _cancel_tasks(tasks: Sequence[Task]) -> None:
 
 
 async def _interact(data: InteractData, tasks: Sequence[Task]) -> None:
+    class SigWinChHandler:
+        def __init__(self, proc: spawn):
+            self.proc = proc
+
+        def handle(self, sig, frame):
+            s = struct.pack("HHHH", 0, 0, 0, 0)
+            a = struct.unpack('hhhh', ioctl(stdout.fileno(),
+                              termios.TIOCGWINSZ, s))
+            if not self.proc.closed:
+                self.proc.setwinsize(a[0], a[1])
+
     internal_data = f"{data.datadir}:/home/{data.user}/.data"
     workdir = f"/home/{data.user}/data"
     workdir_volume = f"{getcwd()}:{workdir}"
@@ -103,7 +119,10 @@ async def _interact(data: InteractData, tasks: Sequence[Task]) -> None:
 
     # TODO: find a cross-platform alternative to pexpect.spawn
     # See https://pexpect.readthedocs.io/en/stable/overview.html#windows
-    p = spawn("docker", args=args)
+    sz = get_terminal_size()
+    p = spawn("docker", args=args, dimensions=(sz[1], sz[0]))
+    winch_handler = SigWinChHandler(p)
+    signal(SIGWINCH, winch_handler.handle)
     p.interact(escape_character=None)
 
     await _cancel_tasks(tasks)
