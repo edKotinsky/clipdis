@@ -130,6 +130,8 @@ async def _interact(data: InteractData, tasks: Sequence[Task]) -> None:
 
 async def _halt(statefile: Path, tasks: Sequence[Task]) -> None:
     while True:
+        if not statefile.exists():
+            await _cancel_tasks(tasks)
         with eopen(statefile, "rt") as sf:
             state = sf.read()
             if State.HALT.value in state:
