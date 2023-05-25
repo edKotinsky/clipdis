@@ -52,19 +52,19 @@ def main() -> int:
             "pyperclip >= 1.8.0"
         ]
         config["project"]["scripts"] = {
-            "clipdis_start": "clipdis.main:run_host"
+            "clipdis_start": "clipdis.run_watcher:run"
         }
     else:
         config["project"]["dependencies"] = []
         config["project"]["scripts"] = {
-            "c": "clipdis.main:run_clip",
-            "pbcopy": "clipdis.main:run_clip",
-            "xclip": "clipdis.main:run_clip",
-            "xsel": "clipdis.main:run_clip",
-            "wl-copy": "clipdis.main:run_clip",
-            "p": "clipdis.main:run_clip",
-            "pbpaste": "clipdis.main:run_clip",
-            "wl-paste": "clipdis.main:run_clip"
+            "c": "clipdis.run_clip:run",
+            "pbcopy": "clipdis.run_clip:run",
+            "xclip": "clipdis.run_clip:run",
+            "xsel": "clipdis.run_clip:run",
+            "wl-copy": "clipdis.run_clip:run",
+            "p": "clipdis.run_clip:run",
+            "pbpaste": "clipdis.run_clip:run",
+            "wl-paste": "clipdis.run_clip:run"
         }
 
     d = DumpTOML()

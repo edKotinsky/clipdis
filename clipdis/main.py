@@ -5,14 +5,19 @@ from pathlib import Path
 from os import environ
 
 from .clip import clipboard_tool
-from .start_docker import InteractData, start
-from .common import run
+from .watcher import InteractData, start
 from .constants import CB_DIR_VAR_NAME
+from enum import Enum
 
 
-async def main(is_host: bool) -> int:
+class ClipdisType(Enum):
+    WATCHER = 0
+    CLIP = 1
+
+
+async def main(type: ClipdisType) -> int:
     try:
-        if is_host:
+        if type is ClipdisType.WATCHER:
             parser = ArgumentParser()
 
             parser.add_argument("-d", "--datadir", type=str,
@@ -46,7 +51,7 @@ async def main(is_host: bool) -> int:
         else:
             name = Path(argv[0]).stem
             if CB_DIR_VAR_NAME not in environ:
-                raise RuntimeWarning(f"{CB_DIR_VAR_NAME} is not set")
+                raise RuntimeWarning(f"{CB_DIR_VAR_NAME} variable is not set")
             directory = environ[CB_DIR_VAR_NAME]
             await clipboard_tool(name, directory, args)
         return 0
@@ -68,11 +73,3 @@ def _print_stacktrace(trace: str) -> None:
             print(line)
             if i + 1 < len(trace):
                 print(trace[i + 1])
-
-
-def run_clip() -> int:
-    return run(main(False))
-
-
-def run_host() -> int:
-    return run(main(True))
