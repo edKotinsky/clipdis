@@ -105,12 +105,13 @@ async def _run_clip_as_module(parser: ArgumentParser) -> None:
 
 async def clipboard_tool() -> None:
     parser = ArgumentParser()
-    _, args = parser.parse_known_args()
     binname = Path(argv[0]).stem
 
     if binname == "run_clip":
         await _run_clip_as_module(parser)
         return
+
+    _, args = parser.parse_known_args()
 
     if CB_DIR_VAR_NAME not in environ:
         raise RuntimeWarning(f"{CB_DIR_VAR_NAME} variable is not set")
