@@ -11,6 +11,7 @@ from pexpect import spawn
 from sys import stdout
 from fcntl import ioctl
 from signal import signal, SIGWINCH
+from argparse import ArgumentParser, Namespace
 
 from .common import FileWatcher, State, eopen, check_state
 from .constants import STATEFILE, DATAFILE
@@ -94,7 +95,7 @@ async def _cancel_tasks(tasks: Sequence[Task]) -> None:
         await sleep(0)
 
 
-async def _interact(data: InteractData, tasks: Sequence[Task]) -> None:
+async def _interact(data: Namespace, tasks: Sequence[Task]) -> None:
     class SigWinChHandler:
         def __init__(self, proc: spawn):
             self.proc = proc
@@ -111,7 +112,7 @@ async def _interact(data: InteractData, tasks: Sequence[Task]) -> None:
     workdir_volume = f"{getcwd()}:{workdir}"
 
     args = ["run", "--interactive", "--tty", "--rm",
-            "--name", data.name,
+            "--name", data.containername,
             "--volume", internal_data,
             "--volume", workdir_volume,
             "--workdir", workdir,
@@ -141,24 +142,49 @@ async def _halt(statefile: Path, tasks: Sequence[Task]) -> None:
     pass
 
 
-async def start(data: InteractData) -> None:
-    _configure_logger(data.logfile)
+async def watcher() -> None:
+    parser = ArgumentParser()
+
+    parser.add_argument("-d", "--datadir", type=str, required=True,
+                        help="Directory where the container will store"
+                        "its internal data")
+    parser.add_argument("-c", "--clipdir", type=str, required=True,
+                        help="Directory where the clipboard dispatcher "
+                        "files will be stored; in this directory the "
+                        "docker's volume will be mounted")
+    parser.add_argument("-u", "--user", type=str, required=True,
+                        help="Username")
+    parser.add_argument("-i", "--image", type=str, required=True,
+                        help="Image name")
+    parser.add_argument("-n", "--containername", type=str,
+                        default="hello_world",
+                        help="Container name; by default: hello_world")
+    parser.add_argument("-l", "--logfile", type=str, default='_',
+                        help="File to write log messages")
+    parser.add_argument("--dry-run", action='store_true',
+                        help="Do not start docker container; in this "
+                        "mode options --datadir, --user, --image, "
+                        "--containername have no effect and are "
+                        "unnecessary;")
+    ns = parser.parse_args()
+
+    _configure_logger(ns.logfile)
 
     if not which("docker"):
         raise RuntimeWarning("docker is not found")
 
     tasks = set()
 
-    statefile = Path(data.clipdir) / STATEFILE
-    datafile = Path(data.clipdir) / DATAFILE
+    statefile = Path(ns.clipdir) / STATEFILE
+    datafile = Path(ns.clipdir) / DATAFILE
 
     tasks.add(create_task(_halt(statefile, tasks)))
 
     watcher = FileWatcher(statefile, _callback, statefile, datafile, tasks)
     tasks.add(create_task(watcher.watch()))
 
-    if not data.dryrun:
-        tasks.add(create_task(_interact(data, tasks)))
+    if not ns.dry_run:
+        tasks.add(create_task(_interact(ns, tasks)))
 
     try:
         await gather(*tasks)

@@ -1,8 +1,11 @@
 from typing import Sequence
-from sys import stdin, stdout
+from sys import stdin, stdout, argv
 from pathlib import Path
 from os import stat
 from asyncio import sleep
+from argparse import ArgumentParser
+from os import environ
+from .constants import CB_DIR_VAR_NAME
 
 from .common import run_in_executor, eopen, State, FileWatcher
 from .constants import STATEFILE, DATAFILE, ENCODING
@@ -82,10 +85,52 @@ async def _paste(datafile: Path, statefile: Path) -> None:
     await sf_watcher.async_look()
 
 
-async def clipboard_tool(binname: str, directory: str,
-                         args: Sequence[str]) -> None:
-    if not directory:
-        raise RuntimeWarning("Clip directory is not specified")
+async def _run_clip_as_module(parser: ArgumentParser) -> None:
+    parser.add_argument("--copy", action="store_true")
+    parser.add_argument("--paste", action="store_true")
+    parser.add_argument("--directory", type=str, required=True)
+
+    ns = parser.parse_args()
+
+    directory = ns.directory
+    datafile, statefile = _ensure_files(directory)
+
+    if ns.copy:
+        await _copy(datafile, statefile)
+    elif ns.paste:
+        await _paste(datafile, statefile)
+    else:
+        parser.print_usage()
+
+
+async def clipboard_tool() -> None:
+    parser = ArgumentParser()
+    _, args = parser.parse_known_args()
+    binname = Path(argv[0]).stem
+
+    if binname == "run_clip":
+        await _run_clip_as_module(parser)
+        return
+
+    if CB_DIR_VAR_NAME not in environ:
+        raise RuntimeWarning(f"{CB_DIR_VAR_NAME} variable is not set")
+    directory = environ[CB_DIR_VAR_NAME]
+    datafile, statefile = _ensure_files(directory)
+
+    if not datafile.exists():
+        datafile.touch()
+    if not statefile.exists():
+        statefile.touch()
+
+    if _is_copy(binname, args):
+        await _copy(datafile, statefile)
+    elif _is_paste(binname, args):
+        await _paste(datafile, statefile)
+    else:
+        raise RuntimeWarning(f"Unrecognized program name: {binname}")
+
+
+def _ensure_files(directory: Path) -> tuple[Path, Path]:
     datafile = directory / DATAFILE
     statefile = directory / STATEFILE
 
@@ -94,11 +139,4 @@ async def clipboard_tool(binname: str, directory: str,
     if not statefile.exists():
         statefile.touch()
 
-    binname = Path(binname).stem
-
-    if _is_copy(binname, args):
-        await _copy(datafile, statefile)
-    elif _is_paste(binname, args):
-        await _paste(datafile, statefile)
-    else:
-        raise RuntimeWarning(f"Unrecognized program name: {binname}")
+    return (datafile, statefile)
