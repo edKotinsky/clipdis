@@ -14,6 +14,8 @@ from shutil import which
 from .common import FileWatcher, ProcessWatcher, State, eopen, check_state, run
 from .constants import STATEFILE, DATAFILE
 
+LOCKFILE = ".lock"
+
 
 def _copy(filename: Path) -> None:
     try:
@@ -120,26 +122,35 @@ def _check_container(name: str, statefile: Path = "",
 
 async def _main(dir: str, containername: str, logfile: str,
                 dry_run: bool) -> None:
-    _configure_logger(logfile)
-
-    tasks = set()
-
-    statefile = Path(dir) / STATEFILE
-    datafile = Path(dir) / DATAFILE
-
-    watcher = FileWatcher(statefile, _callback, statefile, datafile, tasks)
-    tasks.add(create_task(watcher.watch()))
-
-    if not dry_run:
-        container_watcher = \
-            ProcessWatcher(_check_container,
-                           (containername, statefile, dry_run), tasks)
-        tasks.add(create_task(container_watcher.watch()))
+    dir = Path(dir)
+    lockfile = dir / LOCKFILE
 
     try:
-        await gather(*tasks)
+        if lockfile.exists():
+            return
+        lockfile.touch()
+
+        _configure_logger(logfile)
+
+        tasks = set()
+
+        statefile = dir / STATEFILE
+        datafile = dir / DATAFILE
+
+        watcher = FileWatcher(statefile, _callback, statefile, datafile, tasks)
+        tasks.add(create_task(watcher.watch()))
+
+        if not dry_run:
+            container_watcher = \
+                ProcessWatcher(_check_container,
+                               (containername, statefile, dry_run), tasks)
+            tasks.add(create_task(container_watcher.watch()))
+
+            await gather(*tasks)
     except CancelledError:
         pass
+    finally:
+        lockfile.unlink(missing_ok=True)
 
 
 # utilities
