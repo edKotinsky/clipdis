@@ -1,31 +1,18 @@
 import logging
-import struct
-import termios
 import pyperclip as pyc
-from os import getcwd, get_terminal_size
-from asyncio import CancelledError, Task, sleep, create_task, gather
+import subprocess as sub
+
+from asyncio import CancelledError, sleep, create_task, gather
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, Awaitable, Callable, TypeVar
+from argparse import ArgumentParser
+from multiprocessing import Process
+from os import getcwd, execvp
+from functools import partial
 from shutil import which
-from pexpect import spawn
-from sys import stdout
-from fcntl import ioctl
-from signal import signal, SIGWINCH
-from argparse import ArgumentParser, Namespace
 
-from .common import FileWatcher, State, eopen, check_state
+from .common import FileWatcher, ProcessWatcher, State, eopen, check_state, run
 from .constants import STATEFILE, DATAFILE
-
-
-def _configure_logger(logfile: str):
-    if logfile == '_':
-        return
-    name = "clipboard-watcher"
-    logging.basicConfig(filename=logfile,
-                        level=logging.INFO,
-                        format=f"%(asctime)s {name} %(levelname)s: %(message)s",
-                        datefmt="%Y-%m-%d %H:%M:%S")
-    logging.info("Logging initialized")
 
 
 def _copy(filename: Path) -> None:
@@ -63,98 +50,21 @@ def _callback(statefile: Path, datafile: Path, tasks: set) -> None:
             _paste(datafile, statefile)
 
 
-class InteractData(object):
-    def __init__(self, data_directory: str, clip_directory: str,
-                 user_name: str, image: str, container_name: str,
-                 dry_run: bool, logfile: str):
-        opts = dry_run or data_directory and user_name and image and \
-            container_name
-        if not (clip_directory and opts):
-            raise RuntimeWarning(
-                "Not all necessary arguments are specified. Type `--help`")
-        self.datadir = data_directory
-        self.clipdir = clip_directory
-        self.user = user_name
-        self.image = image
-        self.name = container_name
-        self.logfile = logfile
-        self.dryrun = dry_run
-
-
-def _tasks_done(tasks: Sequence[Task]) -> bool:
-    for task in tasks:
-        if not task.done():
-            return False
-    return True
-
-
-async def _cancel_tasks(tasks: Sequence[Task]) -> None:
-    for task in tasks:
-        task.cancel()
-    while not _tasks_done(tasks):
-        await sleep(0)
-
-
-async def _interact(data: Namespace, tasks: Sequence[Task]) -> None:
-    class SigWinChHandler:
-        def __init__(self, proc: spawn):
-            self.proc = proc
-
-        def handle(self, sig, frame):
-            s = struct.pack("HHHH", 0, 0, 0, 0)
-            a = struct.unpack('hhhh', ioctl(stdout.fileno(),
-                              termios.TIOCGWINSZ, s))
-            if not self.proc.closed:
-                self.proc.setwinsize(a[0], a[1])
-
-    internal_data = f"{data.datadir}:/home/{data.user}/.data"
-    workdir = f"/home/{data.user}/data"
-    workdir_volume = f"{getcwd()}:{workdir}"
-
-    args = ["run", "--interactive", "--tty", "--rm",
-            "--name", data.containername,
-            "--volume", internal_data,
-            "--volume", workdir_volume,
-            "--workdir", workdir,
-            data.image, "/bin/bash"]
-
-    # TODO: find a cross-platform alternative to pexpect.spawn
-    # See https://pexpect.readthedocs.io/en/stable/overview.html#windows
-    sz = get_terminal_size()
-    p = spawn("docker", args=args, dimensions=(sz[1], sz[0]))
-    winch_handler = SigWinChHandler(p)
-    signal(SIGWINCH, winch_handler.handle)
-    p.interact(escape_character=None)
-
-    await _cancel_tasks(tasks)
-
-
-async def _halt(statefile: Path, tasks: Sequence[Task]) -> None:
-    while True:
-        if not statefile.exists():
-            await _cancel_tasks(tasks)
-        with eopen(statefile, "rt") as sf:
-            state = sf.read()
-            if State.HALT.value in state:
-                await _cancel_tasks(tasks)
-                return
-            await sleep(0.1)
-    pass
-
-
 async def watcher() -> None:
+    if not which("docker"):
+        raise RuntimeWarning("docker is not found")
+
     parser = ArgumentParser()
 
-    parser.add_argument("-d", "--datadir", type=str, required=True,
+    parser.add_argument("-d", "--datadir", type=str,
                         help="Directory where the container will store"
                         "its internal data")
     parser.add_argument("-c", "--clipdir", type=str, required=True,
                         help="Directory where the clipboard dispatcher "
-                        "files will be stored; in this directory the "
-                        "docker's volume will be mounted")
-    parser.add_argument("-u", "--user", type=str, required=True,
+                        "files will be stored")
+    parser.add_argument("-u", "--user", type=str,
                         help="Username")
-    parser.add_argument("-i", "--image", type=str, required=True,
+    parser.add_argument("-i", "--image", type=str,
                         help="Image name")
     parser.add_argument("-n", "--containername", type=str,
                         default="hello_world",
@@ -168,25 +78,114 @@ async def watcher() -> None:
                         "unnecessary;")
     ns = parser.parse_args()
 
-    _configure_logger(ns.logfile)
+    if not ns.dry_run and (not ns.datadir or not ns.user or not ns.image):
+        parser.print_usage()
+        raise RuntimeWarning("Specify data directory, username and image, or "
+                             "run with --dry-run")
 
-    if not which("docker"):
-        raise RuntimeWarning("docker is not found")
+    # spawn detached watcher
+    co_runner = partial(_run_co, _main,
+                        (ns.clipdir, ns.containername, ns.logfile, ns.dry_run))
+    await _spawn_detached(co_runner)
+
+    if _check_container(ns.containername):
+        print("Container is already spawned")
+        exec_start_attach_container(ns.containername)
+
+    workdir = f"/home/{ns.user}/data"
+    docker_cmd = ["docker", "run", "--interactive", "--tty",
+                  "--name", ns.containername,
+                  "--volume", f"{ns.clipdir}:/home/{ns.user}/.clipboard",
+                  "--volume", f"{getcwd()}:{workdir}",
+                  "--volume", f"{ns.datadir}:/home/{ns.user}/.data",
+                  "--workdir", workdir,
+                  ns.image, "/bin/bash"
+                  ]
+
+    execvp("docker", docker_cmd)
+
+
+def _check_container(name: str, statefile: Path = "",
+                     dry_run: bool = True) -> bool:
+    if not (dry_run or statefile.exists()):
+        return False
+    cmd = ["docker", "container", "ls",
+           "--all",
+           "--filter", "name=" + name]
+    proc = sub.run(cmd, stdout=sub.PIPE, stderr=sub.PIPE, text=True)
+    if name not in proc.stdout:
+        return False
+    return True
+
+
+async def _main(dir: str, containername: str, logfile: str,
+                dry_run: bool) -> None:
+    _configure_logger(logfile)
 
     tasks = set()
 
-    statefile = Path(ns.clipdir) / STATEFILE
-    datafile = Path(ns.clipdir) / DATAFILE
-
-    tasks.add(create_task(_halt(statefile, tasks)))
+    statefile = Path(dir) / STATEFILE
+    datafile = Path(dir) / DATAFILE
 
     watcher = FileWatcher(statefile, _callback, statefile, datafile, tasks)
     tasks.add(create_task(watcher.watch()))
 
-    if not ns.dry_run:
-        tasks.add(create_task(_interact(ns, tasks)))
+    if not dry_run:
+        container_watcher = \
+            ProcessWatcher(_check_container,
+                           (containername, statefile, dry_run), tasks)
+        tasks.add(create_task(container_watcher.watch()))
 
     try:
         await gather(*tasks)
     except CancelledError:
         pass
+
+
+# utilities
+
+
+def exec_start_attach_container(name: str) -> None:
+    cmd = ["docker", "start", "-ai", name]
+    execvp("docker", cmd)
+
+
+def _configure_logger(logfile: str):
+    if logfile == '_':
+        return
+    name = "clipboard-watcher"
+    logging.basicConfig(filename=logfile,
+                        level=logging.INFO,
+                        format=f"%(asctime)s {name} %(levelname)s: %(message)s",
+                        datefmt="%Y-%m-%d %H:%M:%S")
+    logging.info("Logging initialized")
+
+
+async def _spawn_detached(co: Awaitable):
+    # creates detached (orphaned) process by double forking it
+    p = _spawn_detached_impl(0, co)
+    await sleep(0.1)
+    if isinstance(p, Process):
+        p.terminate()
+
+
+def _spawn_detached_impl(count: int, co: Awaitable):
+    count += 1
+    if count < 2:
+        name = "clipdis.watcher-child"
+    elif count == 2:
+        name = "clipdis.watcher"
+    else:
+        return co()
+
+    p = Process(name=name, target=_spawn_detached_impl, args=(count, co),
+                daemon=False)
+    p.start()
+    return p
+
+
+_T = TypeVar("_T")
+
+
+def _run_co(co_func: Callable[..., Awaitable[_T]], args: Sequence) -> _T:
+    return run(co_func(*args))
