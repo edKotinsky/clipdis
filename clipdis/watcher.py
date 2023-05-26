@@ -95,7 +95,7 @@ async def watcher() -> None:
         exec_start_attach_container(ns.containername)
 
     workdir = f"/home/{ns.user}/data"
-    docker_cmd = ["docker", "run", "--interactive", "--tty",
+    docker_cmd = ["docker", "run", "--interactive", "--tty", "--rm",
                   "--name", ns.containername,
                   "--volume", f"{ns.clipdir}:/home/{ns.user}/.clipboard",
                   "--volume", f"{getcwd()}:{workdir}",
