@@ -3,7 +3,7 @@ from sys import stdin, stdout, argv
 from pathlib import Path
 from os import stat
 from asyncio import sleep
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from os import environ
 from .constants import CB_DIR_VAR_NAME
 
@@ -16,7 +16,9 @@ _wait_max_time_sec = 1
 _wait_max_try = _wait_max_time_sec // _wait_refresh_sec
 
 
-def _is_copy(name: str, args: Sequence[str]) -> bool:
+def _is_copy(name: str, ns: Namespace, args: Sequence[str]) -> bool:
+    if name == "run_clip" and ns.copy:
+        return True
     if name in {"c", "pbcopy", "wl-copy"}:
         return True
     elif name == "xclip" and {*args}.isdisjoint({"-o", "-out"}):
@@ -27,7 +29,9 @@ def _is_copy(name: str, args: Sequence[str]) -> bool:
         return False
 
 
-def _is_paste(name: str, args: Sequence[str]) -> bool:
+def _is_paste(name: str, ns: Namespace, args: Sequence[str]) -> bool:
+    if name == "run_clip" and ns.paste:
+        return True
     if name in {"p", "pbpaste", "wl-paste"}:
         return True
     elif name == "xclip" and not {*args}.isdisjoint({"-o", "-out"}):
@@ -85,37 +89,26 @@ async def _paste(datafile: Path, statefile: Path) -> None:
     await sf_watcher.async_look()
 
 
-async def _run_clip_as_module(parser: ArgumentParser) -> None:
-    parser.add_argument("--copy", action="store_true")
-    parser.add_argument("--paste", action="store_true")
-    parser.add_argument("--directory", type=str, required=True)
-
-    ns = parser.parse_args()
-
-    directory = ns.directory
-    datafile, statefile = _ensure_files(directory)
-
-    if ns.copy:
-        await _copy(datafile, statefile)
-    elif ns.paste:
-        await _paste(datafile, statefile)
-    else:
-        parser.print_usage()
-
-
 async def clipboard_tool() -> None:
     parser = ArgumentParser()
     binname = Path(argv[0]).stem
 
     if binname == "run_clip":
-        await _run_clip_as_module(parser)
-        return
+        parser.add_argument("--copy", action="store_true")
+        parser.add_argument("--paste", action="store_true")
+        parser.add_argument("--directory", type=str, required=True)
 
-    _, args = parser.parse_known_args()
+        ns = parser.parse_args()
+        args = []
 
-    if CB_DIR_VAR_NAME not in environ:
-        raise RuntimeWarning(f"{CB_DIR_VAR_NAME} variable is not set")
-    directory = environ[CB_DIR_VAR_NAME]
+        directory = ns.directory
+    else:
+        _, args = parser.parse_known_args()
+
+        if CB_DIR_VAR_NAME not in environ:
+            raise RuntimeWarning(f"{CB_DIR_VAR_NAME} variable is not set")
+        directory = environ[CB_DIR_VAR_NAME]
+
     datafile, statefile = _ensure_files(directory)
 
     if not datafile.exists():
@@ -123,11 +116,12 @@ async def clipboard_tool() -> None:
     if not statefile.exists():
         statefile.touch()
 
-    if _is_copy(binname, args):
+    if _is_copy(binname, ns, args):
         await _copy(datafile, statefile)
-    elif _is_paste(binname, args):
+    elif _is_paste(binname, ns, args):
         await _paste(datafile, statefile)
     else:
+        parser.print_usage()
         raise RuntimeWarning(f"Unrecognized program name: {binname}")
 
 
