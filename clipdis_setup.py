@@ -31,6 +31,27 @@ config = {
     }
 }
 
+HOST_DEPENDENCIES = [
+    "pyperclip >= 1.8.0"
+]
+
+HOST_SCRIPTS = {
+    "clipdis_run": "clipdis.run_watcher:run"
+}
+
+CONTAINER_DEPENDENCIES = []
+
+CONTAINER_SCRIPTS = {
+    "c": "clipdis.run_clip:run",
+    "pbcopy": "clipdis.run_clip:run",
+    "xclip": "clipdis.run_clip:run",
+    "xsel": "clipdis.run_clip:run",
+    "wl-copy": "clipdis.run_clip:run",
+    "p": "clipdis.run_clip:run",
+    "pbpaste": "clipdis.run_clip:run",
+    "wl-paste": "clipdis.run_clip:run"
+}
+
 
 def main() -> int:
     parser = ArgumentParser()
@@ -46,26 +67,11 @@ def main() -> int:
     ns = parser.parse_args()
 
     if ns.install == "host":
-        config["project"]["dependencies"] = [
-            "pexpect >= 4.8.0",
-            "ptyprocess >= 0.7.0",
-            "pyperclip >= 1.8.0"
-        ]
-        config["project"]["scripts"] = {
-            "clipdis_start": "clipdis.run_watcher:run"
-        }
+        config["project"]["dependencies"] = HOST_DEPENDENCIES
+        config["project"]["scripts"] = HOST_SCRIPTS
     else:
-        config["project"]["dependencies"] = []
-        config["project"]["scripts"] = {
-            "c": "clipdis.run_clip:run",
-            "pbcopy": "clipdis.run_clip:run",
-            "xclip": "clipdis.run_clip:run",
-            "xsel": "clipdis.run_clip:run",
-            "wl-copy": "clipdis.run_clip:run",
-            "p": "clipdis.run_clip:run",
-            "pbpaste": "clipdis.run_clip:run",
-            "wl-paste": "clipdis.run_clip:run"
-        }
+        config["project"]["dependencies"] = CONTAINER_DEPENDENCIES
+        config["project"]["scripts"] = CONTAINER_SCRIPTS
 
     d = DumpTOML()
     s = d.dump(config)
