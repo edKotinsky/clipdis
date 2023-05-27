@@ -62,10 +62,7 @@ async def watcher() -> None:
                         help="File to write log messages; disables logging, "
                         "when not specified")
     parser.add_argument("--dry-run", action='store_true',
-                        help="Do not start docker container; in this "
-                        "mode options --datadir, --user, --image, "
-                        "--containername have no effect and are "
-                        "unnecessary;")
+                        help="Do not start docker container")
     ns, args = parser.parse_known_args()
 
     if not (ns.dry_run or ns.cvolume and ns.hvolume):
