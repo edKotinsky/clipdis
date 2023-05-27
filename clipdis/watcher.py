@@ -6,8 +6,8 @@ from asyncio import CancelledError, sleep, create_task, gather
 from pathlib import Path
 from typing import Sequence, Awaitable, Callable, TypeVar
 from argparse import ArgumentParser
-from multiprocessing import Process
-from os import getcwd, execvp
+from multiprocessing import Process, current_process
+from os import execvp
 from functools import partial
 from shutil import which
 
@@ -15,6 +15,7 @@ from .common import FileWatcher, ProcessWatcher, State, eopen, check_state, run
 from .constants import STATEFILE, DATAFILE
 
 LOCKFILE = ".lock"
+DETACHED_PROCESS_NAME = "clipdis-watcher"
 
 
 def _copy(filename: Path) -> None:
@@ -42,7 +43,57 @@ def _paste(datafile: Path, statefile: Path) -> None:
     logging.info("Pasted")
 
 
-def _callback(statefile: Path, datafile: Path, tasks: set) -> None:
+async def watcher() -> None:
+    if not which("docker"):
+        raise RuntimeWarning("docker is not found")
+
+    parser = ArgumentParser()
+
+    parser.add_argument("-D", "--cvolume", type=str,
+                        help="Directory where the volume will be mounted in a "
+                        "container")
+    parser.add_argument("-d", "--hvolume", type=str, required=True,
+                        help="Directory where the volume will be mounted on a "
+                        "host")
+    parser.add_argument("-n", "--containername", type=str,
+                        default="hello_world",
+                        help="Container name; by default: hello_world")
+    parser.add_argument("-l", "--logfile", type=str, default='_',
+                        help="File to write log messages; disables logging, "
+                        "when not specified")
+    parser.add_argument("--dry-run", action='store_true',
+                        help="Do not start docker container; in this "
+                        "mode options --datadir, --user, --image, "
+                        "--containername have no effect and are "
+                        "unnecessary;")
+    ns, args = parser.parse_known_args()
+
+    if not (ns.dry_run or ns.cvolume and ns.hvolume):
+        parser.print_usage()
+        raise RuntimeWarning("Specify volume directories or run with --dry-run")
+
+    # spawn detached watcher
+    co_runner = partial(_run_co, _main,
+                        (ns.hvolume, ns.containername, ns.logfile, ns.dry_run))
+    await _spawn_detached(co_runner)
+
+    if ns.dry_run:
+        return
+
+    if _check_container(ns.containername):
+        print("Container is already spawned")
+        exec_start_attach_container(ns.containername)
+
+    docker_cmd = ["docker", "run", "--interactive", "--tty",
+                  "--name", ns.containername,
+                  "--volume", f"{ns.hvolume}:{ns.cvolume}",
+                  *args]
+
+    execvp("docker", docker_cmd)
+
+
+async def _callback(statefile: Path, datafile: Path,
+                    process_watcher: ProcessWatcher) -> None:
     state = check_state(statefile)
     if state != State.NONE:
         logging.info(f"State changed: {state.value}")
@@ -50,61 +101,8 @@ def _callback(statefile: Path, datafile: Path, tasks: set) -> None:
             _copy(datafile)
         elif state == State.PASTE:
             _paste(datafile, statefile)
-
-
-async def watcher() -> None:
-    if not which("docker"):
-        raise RuntimeWarning("docker is not found")
-
-    parser = ArgumentParser()
-
-    parser.add_argument("-d", "--datadir", type=str,
-                        help="Directory where the container will store"
-                        "its internal data")
-    parser.add_argument("-c", "--clipdir", type=str, required=True,
-                        help="Directory where the clipboard dispatcher "
-                        "files will be stored")
-    parser.add_argument("-u", "--user", type=str,
-                        help="Username")
-    parser.add_argument("-i", "--image", type=str,
-                        help="Image name")
-    parser.add_argument("-n", "--containername", type=str,
-                        default="hello_world",
-                        help="Container name; by default: hello_world")
-    parser.add_argument("-l", "--logfile", type=str, default='_',
-                        help="File to write log messages")
-    parser.add_argument("--dry-run", action='store_true',
-                        help="Do not start docker container; in this "
-                        "mode options --datadir, --user, --image, "
-                        "--containername have no effect and are "
-                        "unnecessary;")
-    ns = parser.parse_args()
-
-    if not ns.dry_run and (not ns.datadir or not ns.user or not ns.image):
-        parser.print_usage()
-        raise RuntimeWarning("Specify data directory, username and image, or "
-                             "run with --dry-run")
-
-    # spawn detached watcher
-    co_runner = partial(_run_co, _main,
-                        (ns.clipdir, ns.containername, ns.logfile, ns.dry_run))
-    await _spawn_detached(co_runner)
-
-    if _check_container(ns.containername):
-        print("Container is already spawned")
-        exec_start_attach_container(ns.containername)
-
-    workdir = f"/home/{ns.user}/data"
-    docker_cmd = ["docker", "run", "--interactive", "--tty", "--rm",
-                  "--name", ns.containername,
-                  "--volume", f"{ns.clipdir}:/home/{ns.user}/.clipboard",
-                  "--volume", f"{getcwd()}:{workdir}",
-                  "--volume", f"{ns.datadir}:/home/{ns.user}/.data",
-                  "--workdir", workdir,
-                  ns.image, "/bin/bash"
-                  ]
-
-    execvp("docker", docker_cmd)
+        elif state == State.HALT:
+            await process_watcher.cancel_tasks()
 
 
 def _check_container(name: str, statefile: Path = "",
@@ -126,7 +124,7 @@ async def _main(dir: str, containername: str, logfile: str,
     lockfile = dir / LOCKFILE
 
     try:
-        if lockfile.exists():
+        if lockfile.exists() or current_process().name != DETACHED_PROCESS_NAME:
             return
         lockfile.touch()
 
@@ -137,16 +135,18 @@ async def _main(dir: str, containername: str, logfile: str,
         statefile = dir / STATEFILE
         datafile = dir / DATAFILE
 
-        watcher = FileWatcher(statefile, _callback, statefile, datafile, tasks)
+        container_watcher = \
+            ProcessWatcher(_check_container,
+                           (containername, statefile, dry_run), tasks)
+
+        watcher = FileWatcher(statefile, _callback, statefile, datafile,
+                              container_watcher)
         tasks.add(create_task(watcher.watch()))
 
         if not dry_run:
-            container_watcher = \
-                ProcessWatcher(_check_container,
-                               (containername, statefile, dry_run), tasks)
             tasks.add(create_task(container_watcher.watch()))
 
-            await gather(*tasks)
+        await gather(*tasks)
     except CancelledError:
         pass
     finally:
@@ -183,9 +183,9 @@ async def _spawn_detached(co: Awaitable):
 def _spawn_detached_impl(count: int, co: Awaitable):
     count += 1
     if count < 2:
-        name = "clipdis.watcher-child"
+        name = DETACHED_PROCESS_NAME + ".fork"
     elif count == 2:
-        name = "clipdis.watcher"
+        name = DETACHED_PROCESS_NAME
     else:
         return co()
 
