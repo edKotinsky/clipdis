@@ -18,29 +18,35 @@ class FileWatcher:
     refresh_in_seconds = 0.1
     stamp = 0
 
-    def __init__(self, file_to_watch: Path, file_changed_callback,
+    def __init__(self, file_to_watch: Path,
+                 file_changed_callback: Callable[..., T],
                  *args, **kwargs):
         self.filename = file_to_watch
         self.__callback = file_changed_callback
         self.__args = args
         self.__kwargs = kwargs
 
-    def look(self) -> None:
+    async def __call(self) -> bool:
+        if iscoroutinefunction(self.__callback):
+            await self.__callback(*self.__args, **self.__kwargs)
+            return True
+        elif callable(self.__callback):
+            self.__callback(*self.__args, **self.__kwargs)
+            return True
+        return False
+
+    async def look(self):
         if not self.filename.exists():
             return
         stamp = stat(self.filename).st_mtime
         if stamp == self.stamp:
             return
         self.stamp = stamp
-        if not callable(self.__callback):
-            msg = "FileWatcher's callback must be callable, not " + \
-                  type(self.__callback)
-            raise RuntimeError(msg)
-        self.__callback(*self.__args, **self.__kwargs)
+        await self.__call()
 
     async def watch(self) -> None:
         while True:
-            self.look()
+            await self.look()
             await sleep(self.refresh_in_seconds)
 
     async def async_look(self) -> None:
@@ -53,11 +59,8 @@ class FileWatcher:
                 await sleep(self.refresh_in_seconds)
                 continue
             self.stamp = stamp
-            if iscoroutinefunction(self.__callback):
-                await self.__callback(*self.__args, **self.__kwargs)
-                return
-            elif callable(self.__callback):
-                self.__callback(*self.__args, **self.__kwargs)
+            called = await self.__call()
+            if called:
                 return
             else:
                 msg = "FileWatcher's callback must be callable or " + \
@@ -67,10 +70,10 @@ class FileWatcher:
 
 class ProcessWatcher:
     refresh_in_seconds = 1
-    container_wait_in_seconds = 1
+    delay_in_seconds = 1
 
-    def __init__(self, check_function: Callable[..., bool], fun_args: Sequence,
-                 tasks: Sequence[Task]):
+    def __init__(self, check_function: Callable[..., bool],
+                 fun_args: Sequence, tasks: Sequence[Task]):
         self.__tasks = tasks
         self.__check = check_function
         self.__check_args = fun_args
@@ -81,7 +84,7 @@ class ProcessWatcher:
                 return False
         return True
 
-    async def __cancel_tasks(self) -> None:
+    async def cancel_tasks(self) -> None:
         for task in self.__tasks:
             task.cancel()
         while not self.__tasks_done():
@@ -89,7 +92,7 @@ class ProcessWatcher:
 
     async def watch(self) -> None:
         max_try_count = \
-            self.container_wait_in_seconds // self.refresh_in_seconds
+            self.delay_in_seconds // self.refresh_in_seconds
         try_count = 0
         while True:
             if try_count < max_try_count:
@@ -97,7 +100,7 @@ class ProcessWatcher:
                 await sleep(self.refresh_in_seconds)
                 continue
             if not self.__check(*self.__check_args):
-                await self.__cancel_tasks()
+                await self.cancel_tasks()
             await sleep(self.refresh_in_seconds)
 
 
@@ -117,10 +120,13 @@ def check_state(filename: Path) -> State:
     with eopen(filename, "rt") as f:
         data = str(f.read())
         if State.DONE.value in data:
-            return State.NONE
-        for s in State:
-            if s.value in data:
-                return s
+            return State.DONE
+        elif State.PASTE.value in data:
+            return State.PASTE
+        elif State.COPY.value in data:
+            return State.COPY
+        elif State.HALT.value in data:
+            return State.HALT
         return State.NONE
 
 
