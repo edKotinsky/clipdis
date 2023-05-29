@@ -1,4 +1,4 @@
-from custom_setup.toml import DumpTOML
+from custom_setup import Py2TOML
 from argparse import ArgumentParser
 from subprocess import Popen, PIPE, STDOUT
 from sys import stdout, exit
@@ -64,6 +64,8 @@ def main() -> int:
                         "`pip install`, just print the output and exit")
     parser.add_argument("-e", "--develop", action="store_true",
                         help="Install in develop mode")
+    parser.add_argument("-g", "--no-install", action="store_true",
+                        help="Generate pyproject.toml without installation")
     ns = parser.parse_args()
 
     if ns.install == "host":
@@ -73,8 +75,8 @@ def main() -> int:
         config["project"]["dependencies"] = CONTAINER_DEPENDENCIES
         config["project"]["scripts"] = CONTAINER_SCRIPTS
 
-    d = DumpTOML()
-    s = d.dump(config)
+    toml = Py2TOML()
+    s = toml.convert(config)
 
     if ns.dry_run:
         print(s)
@@ -82,6 +84,9 @@ def main() -> int:
 
     with open("pyproject.toml", "wt") as f:
         f.write(s)
+
+    if ns.no_install:
+        return 0
 
     cmd = ["pip", "install"]
     if ns.develop:
