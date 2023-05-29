@@ -4,8 +4,6 @@ from subprocess import Popen, PIPE, STDOUT
 from sys import stdout, exit
 from pathlib import Path
 
-cwd = Path(__file__).resolve().parent
-
 config = {
     "build-system": {
         "requires": ["setuptools"]
@@ -30,7 +28,6 @@ config = {
         "scripts": {}
     },
     "tool.setuptools.packages.find": {
-        "where": [str(cwd)],
         "include": ["clipdis"]
     }
 }
