@@ -2,6 +2,9 @@ from custom_setup import Py2TOML
 from argparse import ArgumentParser
 from subprocess import Popen, PIPE, STDOUT
 from sys import stdout, exit
+from pathlib import Path
+
+cwd = Path(__file__).resolve().parent
 
 config = {
     "build-system": {
@@ -26,8 +29,9 @@ config = {
         "dynamic": [],
         "scripts": {}
     },
-    "tool.setuptools": {
-        "packages": ["clipdis"]
+    "tool.setuptools.packages.find": {
+        "where": str(cwd),
+        "include": ["clipdis"]
     }
 }
 
