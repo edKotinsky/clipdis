@@ -30,7 +30,7 @@ config = {
         "scripts": {}
     },
     "tool.setuptools.packages.find": {
-        "where": str(cwd),
+        "where": [str(cwd)],
         "include": ["clipdis"]
     }
 }
