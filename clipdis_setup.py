@@ -24,7 +24,6 @@ config = {
         },
         "classifiers": [],
         "dependencies": [],
-        "dynamic": ["version"],
         "scripts": {}
     },
     "tool.setuptools.packages.find": {
