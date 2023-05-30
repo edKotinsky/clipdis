@@ -66,6 +66,10 @@ def main() -> int:
                         help="Install in develop mode")
     parser.add_argument("-g", "--no-install", action="store_true",
                         help="Generate pyproject.toml without installation")
+    parser.add_argument("--pip-args", type=str, default='',
+                        help="Arguments that will be passed to pip")
+    parser.add_argument("-d", "--debug", action="store_true",
+                        help="Print generated pyproject.toml contents")
     ns = parser.parse_args()
 
     if ns.install == "host":
@@ -78,6 +82,9 @@ def main() -> int:
     toml = Py2TOML()
     s = toml.convert(config)
 
+    if ns.debug:
+        print(s)
+
     if ns.dry_run:
         print(s)
         return 0
@@ -88,7 +95,7 @@ def main() -> int:
     if ns.no_install:
         return 0
 
-    cmd = ["pip", "install"]
+    cmd = ["pip", "install"] + ns.pip_args.split()
     if ns.develop:
         cmd.append("-e")
     cmd.append(".")
