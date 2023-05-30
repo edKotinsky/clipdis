@@ -1,4 +1,4 @@
-from typing import Mapping, List, Tuple, TypeVar
+from typing import Mapping, List, Tuple, TypeVar, Union
 from enum import Enum
 from copy import copy
 from datetime import datetime
@@ -16,19 +16,25 @@ class Py2TOML(object):
     eol = '\n'
 
     def __init__(self, table_heading_lvl: int = 3, indent_size: int = 4,
-                 max_block_size: int = 1, table_root: str = ""):
+                 max_block_size: int = 1, table_root: str = "",
+                 prefer_inline: Union[bool, int] = True):
         """
         Py2TOML ctor.
+
         `table_heading_lvl` determines the nesting level, on which headers
         "[key]" will be generated. Indent size is the amount of space
         characters. Max block size determines the length of an inlined struct
         (inline-table or array), for which inlining (placing into one line) is
         allowed.
         """
-        self.__indent_size = indent_size
-        self.__indent = ' ' * indent_size
-        self.__max_block_size = max_block_size
-        self.__heading_lvl = table_heading_lvl
+        self.indent_size = indent_size
+        self.indent = ' ' * indent_size
+        self.max_block_size = max_block_size
+        self.heading_lvl = table_heading_lvl
+
+        assert isinstance(prefer_inline, bool) or \
+            isinstance(prefer_inline, int) and prefer_inline > 0
+        self.prefer_inline = prefer_inline
 
     def convert(self, data: Mapping, root: str = "") -> str:
         """
@@ -37,8 +43,9 @@ class Py2TOML(object):
         """
         try:
             if not root:
-                self.__heading_lvl += 1
+                self.heading_lvl += 1
             stack = [([root], data)]
+            current_stack = []
             dest = []
             queue = []
             parent_name = []
@@ -57,10 +64,13 @@ class Py2TOML(object):
                         if isinstance(v, Mapping):
                             key = copy(parent_name)
                             key.append(k)
-                            stack.append((key, v))
+                            current_stack.append((key, v))
                         else:
                             self.__push_key_value_pair(k, v, queue)
-                    stack.append(name)
+                    current_stack.reverse()
+                    current_stack.append(name)
+                    stack += current_stack
+                    current_stack = []
                 else:
                     queue.append(element)
 
@@ -77,7 +87,7 @@ class Py2TOML(object):
             return ''.join(dest)
         finally:
             if not root:
-                self.__heading_lvl -= 1
+                self.heading_lvl -= 1
 
     # Internal functions
 
@@ -85,7 +95,7 @@ class Py2TOML(object):
         if not isinstance(value, List):
             dest.append((key, value))
         else:
-            dest.append((key, self.InlineStruct(self.__inline_object(value))))
+            dest.append((key, self.__Array(self.__list(value))))
 
     def __standard_table(self, ll: List, stack: List, dest: List) -> None:
         """
@@ -93,9 +103,9 @@ class Py2TOML(object):
         less or equal to heading level, then create a header (see std-table in
         toml.abnf). Otherwise, create a key-value pair.
         """
-        if len(ll) <= self.__heading_lvl:
+        if len(ll) <= self.heading_lvl:
             self.__header(ll, dest)
-        self.__remove_first(self.__heading_lvl, ll)
+        self.__remove_first(self.heading_lvl, ll)
         parents = self.__dotted_key(ll)
         while len(stack):
             kvp = stack.pop()
@@ -127,10 +137,10 @@ class Py2TOML(object):
         """Concatenates previous dotted keys with the key-value pair."""
         return f"{name}{'.' if name else ''}{kvp}"
 
-    class InlineStruct(object):
+    class __Array(object):
         """
         Indicates inline struct. See __push_key_value_pair, if the value is
-        returned by __inline_object, it is wrapped in InlineStruct.
+        returned by __list, it is wrapped in __Array.
         This is to avoid quoting value due to space characters in it.
         """
 
@@ -141,7 +151,7 @@ class Py2TOML(object):
         """__value incapsulates both key-value pairs and array value."""
         if isinstance(v, Tuple):
             value = v[1]
-            if isinstance(value, self.InlineStruct):
+            if isinstance(value, self.__Array):
                 value = value.value
                 return f"{indent}{self.__key(v[0])} = {value}{end}"
             return f"{indent}{self.__key(v[0])} = {self.__val(value)}{end}"
@@ -200,17 +210,17 @@ class Py2TOML(object):
         def _quote_if_str(v):
             return f"'{v}'" if v is str else v
 
-    class _ClosingEntry(_Entry):
+    class __ClosingEntry(_Entry):
         def __str__(self) -> str:
             name = self._quote_if_str(self.name)
             return f"Closing({name}, {self.type}, {self.size})"
 
-    class _OpeningEntry(_Entry):
+    class __OpeningEntry(_Entry):
         def __str__(self) -> str:
             name = self._quote_if_str(self.name)
             return f"Opening({name}, {self.type}, {self.size})"
 
-    def __inline_object(self, data) -> None:
+    def __list(self, data) -> None:
         """
         Converts python List into TOML inline array. Tables in this list will be
         converted into inline tables.
@@ -230,26 +240,32 @@ class Py2TOML(object):
         self.__append_object("", data, stack)
         while (len(stack)):
             e = stack.pop()
+            current_stack = []
             if isinstance(e, List):
                 for n in e:
                     if isinstance(n, List) or isinstance(n, Mapping):
-                        self.__append_object("", n, stack)
+                        self.__append_object("", n, current_stack)
                     elif isinstance(n, Tuple):
                         queue.append(n)
                     else:
                         queue.append(n)
+                stack += current_stack
             elif isinstance(e, Mapping):
                 for k, v in e.items():
                     if isinstance(v, List) or isinstance(v, Mapping):
-                        self.__append_object(k, v, stack)
+                        self.__append_object(k, v, current_stack)
                     else:
                         queue.append((k, v))
+                stack += current_stack
             elif isinstance(e, self._Entry):
                 queue.append(e)
             else:
                 queue.append(e)
 
-        self.__translate_inline(queue, dest)
+        if self.prefer_inline:
+            self.__translate_inline(queue, dest)
+        else:
+            self.__translate_std(queue, dest)
         return ''.join(dest)
 
     def __translate_inline(self, queue: List, dest: List) -> None:
@@ -258,35 +274,35 @@ class Py2TOML(object):
         inline = 0
         for i in range(len(queue)):
             item = queue.pop(0)
-            inline_small_array = inline and block_size < self.__max_block_size
-            brace_indent = (self.__indent * indent_lvl) if not inline else ''
+            inline_small_array = inline and block_size < self.max_block_size
+            brace_indent = (self.indent * indent_lvl) if not inline else ''
             value_indent = brace_indent if not inline_small_array else ' '
-            if isinstance(item, self._OpeningEntry):
+            if isinstance(item, self.__OpeningEntry):
                 if item.type == self._Entry.Type.MAP:
                     inline += 1
-                if item.size <= self.__max_block_size:
+                if item.size <= self.max_block_size:
                     inline += 1
                 indent_lvl += 2 if indent_lvl == -1 else 1
                 block_size = item.size
                 self.__brace(item, dest, brace_indent, inline)
-            elif isinstance(item, self._ClosingEntry):
+            elif isinstance(item, self.__ClosingEntry):
                 if item.type == self._Entry.Type.MAP:
                     inline -= 1
-                if item.size <= self.__max_block_size:
+                if item.size <= self.max_block_size:
                     inline -= 1
                 indent_lvl -= 1
-                block_size = self.__max_block_size + 1
+                block_size = self.max_block_size + 1
                 self.__brace(item, dest, brace_indent, inline)
             else:
                 dest.append(self.__value(item, value_indent, end=''))
             last_pushed = dest[-1]
             nextitem = queue[0] if len(queue) else None
             append_comma = \
-                not isinstance(nextitem, self._ClosingEntry) and \
+                not isinstance(nextitem, self.__ClosingEntry) and \
                 len(queue) and \
                 last_pushed != self.ARRAY_LEFT_BRACE and \
                 last_pushed != self.INLINE_TABLE_LEFT_BRACE
-            append_eol = not inline and block_size > self.__max_block_size
+            append_eol = not inline and block_size > self.max_block_size
             ending = (',' if append_comma else '') + \
                 (self.eol if append_eol else ' ')
             dest.append(ending)
@@ -301,13 +317,13 @@ class Py2TOML(object):
         """
         inline = inline and \
             self.__entry_eq(entry, dest, indent) or \
-            entry.size <= self.__max_block_size and \
-            isinstance(entry, self._ClosingEntry)
+            entry.size <= self.max_block_size and \
+            isinstance(entry, self.__ClosingEntry)
 
         indent = "" if inline else indent
         end = '' if inline else end
 
-        if isinstance(entry, self._OpeningEntry):
+        if isinstance(entry, self.__OpeningEntry):
             dest.append(indent)
             if entry.type == self._Entry.Type.MAP:
                 dest.append(self.INLINE_TABLE_LEFT_BRACE)
@@ -321,20 +337,116 @@ class Py2TOML(object):
                     dest.append(indent[:-4])
                 dest.append(self.ARRAY_RIGHT_BRACE)
 
+    def __translate_std(self, queue: List, dest: List) -> None:
+        pass
+
     def __append_object(self, n: str, data, stack: List) -> None:
         """
-        See comment in a __inline_object method. Wraps stack entry with _Entry
+        See comment in a __list method. Wraps stack entry with _Entry
         instances, which store its name (if this entry has name), type, size
         and indicate, where it starts and ends in the queue.
         """
         size = len(data)
-        stack.append(self._ClosingEntry(n, data, size))
-        stack.append(data)
-        stack.append(self._OpeningEntry(n, data, size))
+        stack.insert(0, self.__OpeningEntry(n, data, size))
+        stack.insert(0, data)
+        stack.insert(0, self.__ClosingEntry(n, data, size))
 
     def __entry_eq(self, entry: _Entry, dest: List, indent: str) -> bool:
         """Prepends key equal (`key =`) to an inline-table/array."""
-        if isinstance(entry, self._OpeningEntry) and entry.name:
+        if isinstance(entry, self.__OpeningEntry) and entry.name:
             dest.append(f"{indent}{entry.name} = ")
             return True
         return False
+
+
+z = {
+    "a": "b",
+    "c": {
+        "d": "e",
+        "one": 1,
+        "two": 2,
+        "three": "four",
+        "pi": 3.14,
+        "Is it true?": True,
+        "Or false?": False
+    },
+    "f": {
+        "g": {
+            "p": {
+                "q": "r",
+                "my greeting": "hello world"
+            },
+            "i": "j",
+            "k": "l"
+        },
+        "m": {
+            "n": "o"
+        },
+        "s": "t"
+    },
+    "u": [
+        {
+            "f": "g"
+        },
+        "h"
+    ],
+    "v": {
+        "n": "o",
+        "b": [
+            "c",
+            {
+                "d": "e",
+                "l": "m",
+                "u": [
+                    "s",
+                    "t"
+                ],
+                "w": {
+                    "x": "y"
+                }
+            },
+            {
+                "comma": "test"
+            },
+            {
+                "first": 1
+            },
+            {
+                "second": 2
+            },
+            "i",
+            "j",
+            "k",
+            [
+                "p",
+                "q",
+                "r",
+                # test for max_block_size
+                ["hello", "my", "dear", "friend", "how", "are", "you?"]
+            ],
+            {
+                "third": 3
+            }
+        ],
+        "f": "g",
+        "inf": float('inf'),
+        "nan": float('nan'),
+        "negative": -1,
+        True: True,
+        False: False,
+        "now": datetime.now()
+        # 3.14: "pi"  # TypeError: Type '<class 'float'>' is not allowed for a key: '3.14'
+    },
+    "one element": [
+        "it is completely alone"
+    ],
+    "my table": {
+        "position": 3
+    }
+}
+
+with open("out.toml", "wt") as f:
+    toml = Py2TOML()
+    data = toml.convert(z)
+    f.write(data)
+    print(data)

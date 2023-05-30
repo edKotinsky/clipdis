@@ -2,11 +2,11 @@ from custom_setup import Py2TOML
 from argparse import ArgumentParser
 from subprocess import Popen, PIPE, STDOUT
 from sys import stdout, exit
-from pathlib import Path
 
 config = {
     "build-system": {
-        "requires": ["setuptools"]
+        "requires": ["setuptools"],
+        "build-backend": "setuptools.build_meta"
     },
     "project": {
         "name": "clipdis",
@@ -24,7 +24,7 @@ config = {
         },
         "classifiers": [],
         "dependencies": [],
-        "dynamic": [],
+        "dynamic": ["version"],
         "scripts": {}
     },
     "tool.setuptools.packages.find": {
