@@ -23,23 +23,19 @@ config = {
             "Repository": "https://github.com/edKotinsky/clipdis"
         },
         "classifiers": [],
-        "dependencies": [],
-        "scripts": {}
+        "dependencies": [
+            "pyperclip >= 1.8.0"
+        ],
     },
     "tool.setuptools.packages.find": {
-        "include": ["clipdis"]
+        "include": ["clipdis"],
+        "where": ["src"]
     }
 }
-
-HOST_DEPENDENCIES = [
-    "pyperclip >= 1.8.0"
-]
 
 HOST_SCRIPTS = {
     "clipdis_run": "clipdis.run_watcher:run"
 }
-
-CONTAINER_DEPENDENCIES = []
 
 CONTAINER_SCRIPTS = {
     "c": "clipdis.run_clip:run",
@@ -73,10 +69,8 @@ def main() -> int:
     ns = parser.parse_args()
 
     if ns.install == "host":
-        config["project"]["dependencies"] = HOST_DEPENDENCIES
         config["project"]["scripts"] = HOST_SCRIPTS
     else:
-        config["project"]["dependencies"] = CONTAINER_DEPENDENCIES
         config["project"]["scripts"] = CONTAINER_SCRIPTS
 
     toml = Py2TOML()
