@@ -1,7 +1,6 @@
 from custom_setup import Py2TOML
 from argparse import ArgumentParser
-from subprocess import Popen, PIPE, STDOUT
-from sys import stdout, exit
+from os import execvp
 from pathlib import Path
 
 config = {
@@ -85,27 +84,20 @@ def main() -> int:
         print(s)
         return 0
 
-    with open("pyproject.toml", "wt") as f:
+    cwd = Path(__file__).parent
+    with open(cwd / "pyproject.toml", "wt") as f:
         f.write(s)
 
     if ns.no_install:
         return 0
 
-    cmd = ["pip", "install"] + ns.pip_args.split()
+    cmd = ["pip3", "install"] + ns.pip_args.split()
     if ns.develop:
         cmd.append("-e")
-    cmd.append(".")
+    print(cwd)
+    cmd.append(cwd)
 
-    proc = Popen(cmd, stdout=PIPE, stderr=STDOUT, text=True,
-                 cwd=Path(__file__).parent.resolve())
-    while True:
-        data = proc.stdout.readline()
-        if not data:
-            break
-        stdout.write(data)
-        stdout.flush()
-
-    return proc.poll()
+    execvp("pip3", cmd)
 
 
 exit(main())
