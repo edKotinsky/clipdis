@@ -2,6 +2,7 @@ from custom_setup import Py2TOML
 from argparse import ArgumentParser
 from subprocess import Popen, PIPE, STDOUT
 from sys import stdout, exit
+from pathlib import Path
 
 config = {
     "build-system": {
@@ -28,8 +29,9 @@ config = {
         ],
     },
     "tool.setuptools.packages.find": {
+        "where": ["src"],
         "include": ["clipdis"],
-        "where": ["src"]
+        "namespaces": False
     }
 }
 
@@ -94,7 +96,8 @@ def main() -> int:
         cmd.append("-e")
     cmd.append(".")
 
-    proc = Popen(cmd, stdout=PIPE, stderr=STDOUT, text=True)
+    proc = Popen(cmd, stdout=PIPE, stderr=STDOUT, text=True,
+                 cwd=Path(__file__).parent)
     while True:
         data = proc.stdout.readline()
         if not data:

@@ -103,7 +103,7 @@ async def clipboard_tool() -> None:
 
         directory = ns.directory
     else:
-        _, args = parser.parse_known_args()
+        ns, args = parser.parse_known_args()
 
         if CB_DIR_VAR_NAME not in environ:
             raise RuntimeWarning(f"{CB_DIR_VAR_NAME} variable is not set")
