@@ -97,7 +97,7 @@ def main() -> int:
     cmd.append(".")
 
     proc = Popen(cmd, stdout=PIPE, stderr=STDOUT, text=True,
-                 cwd=Path(__file__).parent)
+                 cwd=Path(__file__).parent.resolve())
     while True:
         data = proc.stdout.readline()
         if not data:
